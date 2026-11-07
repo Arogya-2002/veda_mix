@@ -1,0 +1,50 @@
+x-app: &app
+  build: .
+  environment:
+    DATABASE_URL: postgresql+asyncpg://veda:veda@postgres:5432/veda
+    REDIS_URL: redis://redis:6379/0
+  volumes:
+    - ./src:/app/src
+    - ./config:/app/config
+    - ./app.py:/app/app.py
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  api:
+    <<: *app
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    ports: ["8000:8000"]
+
+  worker:
+    <<: *app
+    command: celery -A veda.workers worker -l info -Q default,ml
+
+  beat:
+    <<: *app
+    command: celery -A veda.workers beat -l info -s /tmp/celerybeat-schedule
+
+  postgres:
+    image: postgres:17-alpine  # Supabase runs Postgres 17
+    environment:
+      POSTGRES_DB: veda
+      POSTGRES_USER: veda
+      POSTGRES_PASSWORD: veda
+    ports: ["5432:5432"]
+    volumes: [pg_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "veda", "-d", "veda"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pg_data:

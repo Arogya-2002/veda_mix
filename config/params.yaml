@@ -1,0 +1,14 @@
+# Tunables. Changing these needs no code change.
+image:
+  thumb_px: 400
+  web_px: 2048
+  web_quality: 82
+storage:
+  reservation_headroom: 1.15
+  reservation_ttl_minutes: 60
+upload:
+  presign_ttl_minutes: 15
+  max_attempts: 3
+gallery:
+  page_size: 50
+  signed_url_ttl_minutes: 10

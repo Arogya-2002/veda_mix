@@ -1,0 +1,41 @@
+[project]
+name = "veda"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+	"requests>=2.31.0",
+	"python-dotenv>=1.0.0",
+	"fastapi",
+	"uvicorn[standard]",
+	"sqlalchemy[asyncio]",
+	"alembic",
+	"pydantic",
+	"redis",
+	"structlog",
+	"pydantic-settings>=2.16.2",
+	"pyyaml>=6.0.3",
+	"celery[redis]>=5.7.0",
+	"asyncpg>=0.32.0",
+	"psycopg[binary]>=3.3.8",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/veda"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

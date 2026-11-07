@@ -1,0 +1,10 @@
+# Paths, storage prefixes, queue names. Secrets go in env vars, never here.
+storage:
+  originals_prefix: originals
+  variants_prefix: variants
+  qr_prefix: qr
+  cards_prefix: cards
+queues:
+  default: default
+  ml: ml
+artifacts_dir: artifacts
