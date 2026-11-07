@@ -4,7 +4,6 @@ image:
   web_px: 2048
   web_quality: 82
 storage:
-  reservation_headroom: 1.15
   reservation_ttl_minutes: 60
 upload:
   presign_ttl_minutes: 15

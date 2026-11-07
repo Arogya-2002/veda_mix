@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Identity,
@@ -18,16 +19,23 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from veda.constants.enums import (
+    ActorType,
+    DownloadQuality,
     EmailStatus,
     EmailTemplate,
+    EventStatus,
+    EventVisibility,
     PaymentGatewayName,
     PaymentStatus,
     PhotographerStatus,
+    PhotoStatus,
     SubscriptionStatus,
+    UploadFileStatus,
+    UploadSource,
 )
 from veda.db import Base
 
@@ -202,9 +210,141 @@ class StorageQuota(Base):
     )
     # Active: the plan's size. Expired: shrunk to used + reserved, freeing the rest.
     quota_bytes: Mapped[int] = mapped_column(BigInteger, server_default="0")
-    used_bytes: Mapped[int] = mapped_column(BigInteger, server_default="0")  # Phase 4
-    reserved_bytes: Mapped[int] = mapped_column(BigInteger, server_default="0")  # Phase 4
+    used_bytes: Mapped[int] = mapped_column(BigInteger, server_default="0")  # verified originals
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, server_default="0")  # uploads in flight
     updated_at: Mapped[datetime] = _updated_at()
+
+
+# --- D. Events ----------------------------------------------------------------------
+
+
+class Event(Base):
+    __tablename__ = "events"
+    __table_args__ = (
+        CheckConstraint(_one_of("status", EventStatus), name="status"),
+        CheckConstraint(_one_of("visibility", EventVisibility), name="visibility"),
+        CheckConstraint(_one_of("download_quality", DownloadQuality), name="download_quality"),
+        CheckConstraint(
+            "visibility <> 'PIN_PROTECTED' OR access_pin_hash IS NOT NULL", name="pin_set"
+        ),
+        CheckConstraint(
+            "ends_at IS NULL OR starts_at IS NULL OR ends_at >= starts_at", name="times"
+        ),
+        Index("ix_events_owner_status", "photographer_id", "status", "event_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    photographer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("photographers.id"))
+    name: Mapped[str] = mapped_column(String(160))
+    event_type: Mapped[str | None] = mapped_column(String(40))  # wedding, reception, birthday
+    event_date: Mapped[date] = mapped_column(Date)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    venue: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(20), server_default=EventStatus.UPCOMING)
+    # Random, in the QR and gallery URL. A new one is issued if a QR leaks.
+    public_slug: Mapped[str] = mapped_column(String(10), unique=True)
+    visibility: Mapped[str] = mapped_column(String(20), server_default=EventVisibility.PUBLIC)
+    access_pin_hash: Mapped[str | None] = mapped_column(String(255))  # scrypt, never the PIN
+    allow_download: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    download_quality: Mapped[str] = mapped_column(String(20), server_default=DownloadQuality.WEB)
+    went_live_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# --- E. Uploads and photos ------------------------------------------------------------
+
+_HOLDS_SPACE = "status IN ('PENDING', 'FAILED')"  # upload_files that still reserve quota
+
+
+class UploadSession(Base):
+    """One device's upload run for an event; groups files for progress views."""
+
+    __tablename__ = "upload_sessions"
+    __table_args__ = (
+        CheckConstraint(_one_of("source", UploadSource), name="source"),
+        Index("ix_upload_sessions_event", "event_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    photographer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("photographers.id"))
+    source: Mapped[str] = mapped_column(String(20))
+    device_label: Mapped[str | None] = mapped_column(String(120))  # "Canon R6 via Pixel 8"
+    created_at: Mapped[datetime] = _created_at()
+
+
+class UploadFile(Base):
+    """One file's journey to S3. While PENDING/FAILED it holds reserved_bytes of quota."""
+
+    __tablename__ = "upload_files"
+    __table_args__ = (
+        CheckConstraint(_one_of("status", UploadFileStatus), name="status"),
+        CheckConstraint("size_bytes > 0 AND reserved_bytes >= 0", name="sizes"),
+        # One in-flight upload per file per event (completed ones are deduped via photos).
+        Index(
+            "uq_upload_files_event_sha256_open",
+            "event_id",
+            "sha256",
+            unique=True,
+            postgresql_where=text(_HOLDS_SPACE),
+        ),
+        Index("ix_upload_files_expiry", "expires_at", postgresql_where=text(_HOLDS_SPACE)),
+        Index("ix_upload_files_owner_status", "photographer_id", "status", "created_at"),
+        Index("ix_upload_files_session", "upload_session_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    upload_session_id: Mapped[int] = mapped_column(ForeignKey("upload_sessions.id"))
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    photographer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("photographers.id"))
+    original_filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)  # declared; S3 enforces it
+    sha256: Mapped[str] = mapped_column(String(64))  # hex; S3 enforces it
+    s3_key: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(20), server_default=UploadFileStatus.PENDING)
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default="1")  # upload URLs issued
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # reservation
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Photo(Base):
+    __tablename__ = "photos"
+    __table_args__ = (
+        CheckConstraint(_one_of("status", PhotoStatus), name="status"),
+        # The same picture can't appear twice in one event (deleted ones don't count).
+        Index(
+            "uq_photos_event_sha256",
+            "event_id",
+            "sha256",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index("ix_photos_gallery", "event_id", "status", "uploaded_at", "id"),  # Phase 6 paging
+        Index("ix_photos_owner_uploaded", "photographer_id", "uploaded_at"),  # Phase 7 charts
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(16), unique=True)  # in gallery URLs
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    photographer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("photographers.id"))
+    upload_file_id: Mapped[int] = mapped_column(ForeignKey("upload_files.id"), unique=True)
+    original_filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    sha256: Mapped[str] = mapped_column(String(64))
+    s3_key: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(20), server_default=PhotoStatus.PROCESSING)
+    uploaded_at: Mapped[datetime] = _created_at()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # --- G. Operations ---------------------------------------------------------------------
@@ -228,4 +368,26 @@ class EmailOutbox(Base):
     attempts: Mapped[int] = mapped_column(SmallInteger, server_default="0")
     last_error: Mapped[str | None] = mapped_column(String(500))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
+
+
+class AuditLog(Base):
+    """Who changed what. Append-only; kept indefinitely."""
+
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        CheckConstraint(_one_of("actor_type", ActorType), name="actor_type"),
+        Index("ix_audit_logs_entity", "entity_type", "entity_id", "created_at"),
+        Index("ix_audit_logs_actor", "actor_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    actor_type: Mapped[str] = mapped_column(String(20))
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # null for SYSTEM
+    action: Mapped[str] = mapped_column(String(64))  # AuditAction
+    entity_type: Mapped[str] = mapped_column(String(40))  # "event", "photographer", ...
+    entity_id: Mapped[str] = mapped_column(String(64))  # text: ids are bigints or UUIDs
+    before_state: Mapped[dict | None] = mapped_column(JSONB)
+    after_state: Mapped[dict | None] = mapped_column(JSONB)
+    ip_address: Mapped[str | None] = mapped_column(INET)
     created_at: Mapped[datetime] = _created_at()

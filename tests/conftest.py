@@ -1,5 +1,14 @@
 import os
+import socket
 
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+S3_PORT = _free_port()
 # Before any veda import: settings are read once. Env vars beat .env, so tests
 # always use the local test DB and fake secrets, never the real values in .env.
 os.environ["DATABASE_URL"] = os.environ.get(
@@ -9,6 +18,11 @@ os.environ["SUPABASE_URL"] = "https://test.supabase.co"
 os.environ["RAZORPAY_KEY_ID"] = "rzp_test_key"
 os.environ["RAZORPAY_KEY_SECRET"] = "test_key_secret"
 os.environ["RAZORPAY_WEBHOOK_SECRET"] = "test_webhook_secret"
+os.environ["S3_ENDPOINT_URL"] = f"http://127.0.0.1:{S3_PORT}"  # moto, in-process
+os.environ["S3_BUCKET"] = "veda-test"
+os.environ["GALLERY_BASE_URL"] = "http://localhost:5173/g"
+os.environ["AWS_ACCESS_KEY_ID"] = "test"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "test"
 
 import hashlib
 import hmac
@@ -21,10 +35,12 @@ from alembic import command
 from alembic.config import Config
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
+from moto.server import ThreadedMotoServer
 from sqlalchemy import text
 
 from veda.constants import ROOT_DIR
 from veda.db import sync_session
+from veda.integrations import storage
 from veda.integrations.payments import RazorpayGateway, get_payment_gateway
 
 SIGNING_KEY = ec.generate_private_key(ec.SECP256R1())  # stands in for Supabase's key
@@ -64,6 +80,18 @@ class FakeRazorpay(RazorpayGateway):
     async def create_order(self, amount_paise: int, currency: str, receipt: str) -> str:
         self.orders.append({"amount": amount_paise, "currency": currency, "receipt": receipt})
         return f"order_{len(self.orders)}_{uuid.uuid4().hex[:6]}"
+
+
+@pytest.fixture(scope="session")
+def s3():
+    """A fake S3 on localhost. Unlike real S3 it doesn't enforce signed length/checksum."""
+    server = ThreadedMotoServer(ip_address="127.0.0.1", port=S3_PORT, verbose=False)
+    server.start()
+    storage.client().create_bucket(
+        Bucket="veda-test", CreateBucketConfiguration={"LocationConstraint": "ap-southeast-1"}
+    )
+    yield storage.client()
+    server.stop()
 
 
 @pytest.fixture(scope="session")
@@ -135,6 +163,25 @@ def photographer(client, new_user):
         user_id, headers = new_user(email)
         r = client.post("/auth/register", json=PROFILE | {"phone": phone}, headers=headers)
         assert r.status_code == 201, r.text
+        return user_id, headers
+
+    return _make
+
+
+@pytest.fixture
+def active(photographer):
+    """A paid photographer with a storage quota: (id, auth header)."""
+
+    def _make(email="pat@example.com", phone="+919876543210", quota_bytes=2 * 1024**3):
+        user_id, headers = photographer(email, phone)
+        with sync_session() as s, s.begin():
+            s.execute(
+                text("UPDATE photographers SET status='ACTIVE' WHERE id=:id"), {"id": user_id}
+            )
+            s.execute(
+                text("INSERT INTO storage_quotas (photographer_id, quota_bytes) VALUES (:id, :q)"),
+                {"id": user_id, "q": quota_bytes},
+            )
         return user_id, headers
 
     return _make

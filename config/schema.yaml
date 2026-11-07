@@ -2,5 +2,4 @@
 upload:
   allowed_mime_types: [image/jpeg, image/png, image/heic, image/webp]
   max_file_bytes: 52428800        # 50 MB
-  multipart_threshold_bytes: 104857600  # 100 MB
 exif_fields: [DateTimeOriginal, Make, Model, Orientation]

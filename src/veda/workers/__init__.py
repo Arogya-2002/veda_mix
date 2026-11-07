@@ -15,6 +15,7 @@ celery_app.conf.update(
     timezone="UTC",
     beat_schedule={
         "send-pending-emails": {"task": "veda.send_pending_emails", "schedule": 30.0},
+        "release-expired-uploads": {"task": "veda.release_expired_uploads", "schedule": 300.0},
         "expire-subscriptions": {
             "task": "veda.expire_subscriptions",
             "schedule": crontab(minute=0),

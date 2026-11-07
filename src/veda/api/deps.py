@@ -90,3 +90,13 @@ async def current_admin(user: CurrentUser, db: DbSession) -> AuthUser:
 
 
 CurrentAdmin = Annotated[AuthUser, Depends(current_admin)]
+
+
+async def active_photographer(photographer: CurrentPhotographer) -> Photographer:
+    """Adding or changing things needs a paid subscription; expired accounts are read-only."""
+    if photographer.status != PhotographerStatus.ACTIVE:
+        raise VedaException("SUBSCRIPTION_REQUIRED", "An active subscription is required", 403)
+    return photographer
+
+
+ActivePhotographer = Annotated[Photographer, Depends(active_photographer)]

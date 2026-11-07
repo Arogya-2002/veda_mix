@@ -19,9 +19,16 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://veda:veda@localhost:5432/veda"
     redis_url: str = "redis://localhost:6379/0"
     supabase_url: str = ""
+    gallery_base_url: str = "http://localhost:5173/g"  # QR codes point at {this}/{slug}
     razorpay_key_id: str = ""  # rzp_test_... in dev; public, sent to the React checkout
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""  # set when creating the webhook in Razorpay's dashboard
+    s3_bucket: str = ""
+    s3_region: str = "ap-southeast-1"
+    s3_endpoint_url: str = ""  # empty = real AWS; tests point this at a local fake
+    # Empty = boto3's default chain (an IAM role on AWS). Locally: a bucket-scoped IAM user.
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
 
     @field_validator("database_url")
     @classmethod

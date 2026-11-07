@@ -27,7 +27,9 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError):
-        return _error(422, "VALIDATION_ERROR", "Invalid request", {"errors": exc.errors()})
+        # Drop "ctx": it can hold the raised ValueError itself, which isn't JSON.
+        errors = [{k: v for k, v in e.items() if k != "ctx"} for e in exc.errors()]
+        return _error(422, "VALIDATION_ERROR", "Invalid request", {"errors": errors})
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception):
