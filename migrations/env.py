@@ -13,11 +13,17 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from veda.config.configuration import get_settings
-from veda.db import Base
+from veda.db import Base, models  # noqa: F401 - importing models registers their tables
 
-# DB URL comes from env/.env, never alembic.ini. Sync driver (pymysql) for migrations.
+# DB URL comes from env/.env, never alembic.ini. Sync driver (psycopg) for migrations.
 config.set_main_option("sqlalchemy.url", get_settings().sync_database_url.replace("%", "%%"))
 target_metadata = Base.metadata
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    # Never create, alter or drop Supabase's own schemas (auth.users etc.).
+    return not (type_ == "table" and obj.schema == "auth")
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -41,6 +47,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -63,7 +70,9 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection, target_metadata=target_metadata, include_object=include_object
+        )
 
         with context.begin_transaction():
             context.run_migrations()

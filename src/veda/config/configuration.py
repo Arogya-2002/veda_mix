@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://veda:veda@localhost:5432/veda"
     redis_url: str = "redis://localhost:6379/0"
     supabase_url: str = ""
+    razorpay_key_id: str = ""  # rzp_test_... in dev; public, sent to the React checkout
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""  # set when creating the webhook in Razorpay's dashboard
 
     @field_validator("database_url")
     @classmethod

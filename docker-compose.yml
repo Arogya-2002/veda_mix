@@ -32,7 +32,9 @@ services:
       POSTGRES_USER: veda
       POSTGRES_PASSWORD: veda
     ports: ["5432:5432"]
-    volumes: [pg_data:/var/lib/postgresql/data]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "veda", "-d", "veda"]
       interval: 5s
