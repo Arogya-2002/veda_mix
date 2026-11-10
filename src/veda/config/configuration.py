@@ -6,6 +6,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from veda.constants import CONFIG_FILE_PATH, PARAMS_FILE_PATH, SCHEMA_FILE_PATH
+from veda.entity.config_entity import ImageConfig
 
 
 class Settings(BaseSettings):
@@ -68,3 +69,9 @@ def get_params() -> dict:
 @lru_cache
 def get_schema() -> dict:
     return _read_yaml(SCHEMA_FILE_PATH)
+
+
+def get_image_config() -> ImageConfig:
+    return ImageConfig(
+        **get_params()["image"], max_pixels=get_schema()["upload"]["max_image_pixels"]
+    )

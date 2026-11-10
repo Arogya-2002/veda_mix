@@ -6,10 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from veda.api.deps import ActivePhotographer, CurrentPhotographer, DbSession
 from veda.config.configuration import get_schema
-from veda.constants.enums import UploadDecision, UploadSource
+from veda.constants.enums import PhotoStatus, UploadDecision, UploadSource
 from veda.exception import VedaException
 from veda.integrations import storage
 from veda.services import uploads
+from veda.workers import enqueue_photo_processing
 
 router = APIRouter(tags=["uploads"])
 
@@ -125,6 +126,8 @@ async def complete(file_id: int, photographer: CurrentPhotographer, db: DbSessio
     await db.commit()
     if photo is None:
         raise VedaException("UPLOAD_MISMATCH", upload.last_error or "Upload failed", 422)
+    if photo.status == PhotoStatus.PROCESSING:  # repeat calls re-queue; the worker skips dupes
+        await run_in_threadpool(enqueue_photo_processing, photo.id)
     return photo
 
 

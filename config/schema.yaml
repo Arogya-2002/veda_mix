@@ -2,4 +2,5 @@
 upload:
   allowed_mime_types: [image/jpeg, image/png, image/heic, image/webp]
   max_file_bytes: 52428800        # 50 MB
+  max_image_pixels: 120000000     # 120 MP: above any current camera; blocks decompression bombs
 exif_fields: [DateTimeOriginal, Make, Model, Orientation]

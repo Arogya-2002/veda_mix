@@ -16,6 +16,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Table,
+    UniqueConstraint,
     func,
     text,
 )
@@ -29,10 +30,14 @@ from veda.constants.enums import (
     EmailTemplate,
     EventStatus,
     EventVisibility,
+    ImageFormat,
     PaymentGatewayName,
     PaymentStatus,
     PhotographerStatus,
     PhotoStatus,
+    PhotoVariantName,
+    ProcessingJobStatus,
+    ProcessingJobType,
     SubscriptionStatus,
     UploadFileStatus,
     UploadSource,
@@ -343,8 +348,66 @@ class Photo(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     s3_key: Mapped[str] = mapped_column(String(512))
     status: Mapped[str] = mapped_column(String(20), server_default=PhotoStatus.PROCESSING)
+    # Filled in by the worker. Width/height as displayed (EXIF rotation applied).
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime)  # camera's local clock, no zone
+    camera_make: Mapped[str | None] = mapped_column(String(64))
+    camera_model: Mapped[str | None] = mapped_column(String(64))
     uploaded_at: Mapped[datetime] = _created_at()
+    ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PhotoVariant(Base):
+    """A resized, metadata-free copy that guests see. Written only when the photo turns READY.
+
+    Not counted against the photographer's quota (an open question in the design).
+    """
+
+    __tablename__ = "photo_variants"
+    __table_args__ = (
+        CheckConstraint(_one_of("variant", PhotoVariantName), name="variant"),
+        CheckConstraint(_one_of("format", ImageFormat), name="format"),
+        UniqueConstraint("photo_id", "variant"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    variant: Mapped[str] = mapped_column(String(10))
+    s3_key: Mapped[str] = mapped_column(String(512))
+    format: Mapped[str] = mapped_column(String(10))
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class ProcessingJob(Base):
+    """Worker progress per photo. Created with the photo, so a lost queue message is
+    found again by the requeue sweep; failures stay here for the admin view."""
+
+    __tablename__ = "processing_jobs"
+    __table_args__ = (
+        CheckConstraint(_one_of("job_type", ProcessingJobType), name="job_type"),
+        CheckConstraint(_one_of("status", ProcessingJobStatus), name="status"),
+        UniqueConstraint("photo_id", "job_type"),
+        Index(
+            "ix_processing_jobs_open",
+            "queued_at",
+            postgresql_where=text("status IN ('QUEUED', 'RUNNING')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    job_type: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), server_default=ProcessingJobStatus.QUEUED)
+    attempts: Mapped[int] = mapped_column(SmallInteger, server_default="0")  # runs started
+    last_error: Mapped[str | None] = mapped_column(String(1000))
+    queued_at: Mapped[datetime] = _created_at()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # --- G. Operations ---------------------------------------------------------------------

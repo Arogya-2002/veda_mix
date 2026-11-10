@@ -20,6 +20,7 @@ os.environ["RAZORPAY_KEY_SECRET"] = "test_key_secret"
 os.environ["RAZORPAY_WEBHOOK_SECRET"] = "test_webhook_secret"
 os.environ["S3_ENDPOINT_URL"] = f"http://127.0.0.1:{S3_PORT}"  # moto, in-process
 os.environ["S3_BUCKET"] = "veda-test"
+os.environ["S3_REGION"] = "ap-southeast-1"  # must match the bucket the s3 fixture creates
 os.environ["GALLERY_BASE_URL"] = "http://localhost:5173/g"
 os.environ["AWS_ACCESS_KEY_ID"] = "test"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "test"
@@ -185,3 +186,12 @@ def active(photographer):
         return user_id, headers
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def enqueued(monkeypatch):
+    """Photo ids the API queued for processing. Nothing reaches Redis in tests; run the
+    work explicitly with process_photo.apply(args=[photo_id])."""
+    calls: list[int] = []
+    monkeypatch.setattr("veda.api.uploads.enqueue_photo_processing", calls.append)
+    return calls

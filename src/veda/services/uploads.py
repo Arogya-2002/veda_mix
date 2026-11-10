@@ -14,8 +14,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from veda.config.configuration import get_params
-from veda.constants.enums import EventStatus, UploadDecision, UploadFileStatus, UploadSource
-from veda.db.models import Event, Photo, Photographer, StorageQuota, UploadFile, UploadSession
+from veda.constants.enums import (
+    EventStatus,
+    ProcessingJobType,
+    UploadDecision,
+    UploadFileStatus,
+    UploadSource,
+)
+from veda.db.models import (
+    Event,
+    Photo,
+    Photographer,
+    ProcessingJob,
+    StorageQuota,
+    UploadFile,
+    UploadSession,
+)
 from veda.exception import VedaException
 from veda.integrations import storage
 from veda.services import events
@@ -244,9 +258,11 @@ async def complete(
     )
     db.add(photo)
     await db.flush()
+    # Same transaction as the photo: if queueing fails later, the sweep still finds it.
+    db.add(ProcessingJob(photo_id=photo.id, job_type=ProcessingJobType.VARIANTS))
+    await db.flush()
     await db.refresh(photo)
-    # Phase 5: enqueue thumbnail processing here.
-    return upload, photo
+    return upload, photo  # the route queues processing after it commits
 
 
 async def retry(db: AsyncSession, photographer_id: uuid.UUID, file_id: int) -> dict:

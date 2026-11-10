@@ -89,10 +89,30 @@ class UploadDecision(StrEnum):
 
 
 class PhotoStatus(StrEnum):
-    PROCESSING = "PROCESSING"  # original stored; thumbnails pending (Phase 5)
-    READY = "READY"  # visible in the gallery
-    FAILED = "FAILED"
+    PROCESSING = "PROCESSING"  # original stored; the worker is making the gallery copies
+    READY = "READY"  # gallery copies exist; visible in the gallery
+    FAILED = "FAILED"  # not a usable image (or processing gave up); see processing_jobs
     HIDDEN = "HIDDEN"  # hidden by the photographer
+
+
+class PhotoVariantName(StrEnum):
+    THUMB = "THUMB"  # grid tile, ~400 px long edge
+    WEB = "WEB"  # full-screen view, ~2048 px long edge
+
+
+class ImageFormat(StrEnum):
+    WEBP = "WEBP"
+
+
+class ProcessingJobType(StrEnum):
+    VARIANTS = "VARIANTS"  # thumbnail + web copy, EXIF read, metadata stripped
+
+
+class ProcessingJobStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"  # bad image, or gave up after max_attempts
 
 
 class ActorType(StrEnum):

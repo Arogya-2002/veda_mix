@@ -79,3 +79,30 @@ def head(key: str) -> tuple[int, str | None] | None:
 def delete(key: str) -> None:
     """Idempotent: deleting a missing key succeeds. Blocking."""
     client().delete_object(Bucket=get_settings().s3_bucket, Key=key)
+
+
+def variant_key(original_key: str, variant: str, extension: str) -> str:
+    """originals/VP-X/12/ab12.jpg -> variants/VP-X/12/ab12_thumb.webp.
+
+    Derived from the original's key, so a re-run overwrites instead of leaving orphans.
+    """
+    prefixes = get_config()["storage"]
+    path = original_key.removeprefix(prefixes["originals_prefix"] + "/").rsplit(".", 1)[0]
+    return f"{prefixes['variants_prefix']}/{path}_{variant.lower()}.{extension}"
+
+
+def get(key: str) -> bytes:
+    """The whole object (originals are at most 50 MB). Blocking."""
+    return client().get_object(Bucket=get_settings().s3_bucket, Key=key)["Body"].read()
+
+
+def put(key: str, data: bytes, content_type: str) -> None:
+    """Server-side upload (worker output). Keys never change content, so browsers may cache
+    them for good. Blocking."""
+    client().put_object(
+        Bucket=get_settings().s3_bucket,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+        CacheControl="private, max-age=31536000, immutable",
+    )

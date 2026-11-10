@@ -1,8 +1,13 @@
 # Tunables. Changing these needs no code change.
 image:
-  thumb_px: 400
-  web_px: 2048
+  thumb_px: 400          # long edge
+  web_px: 2048           # long edge; smaller originals are never enlarged
+  thumb_quality: 75      # WebP, 0-100
   web_quality: 82
+processing:
+  max_attempts: 3              # runs per photo before it's marked FAILED (S3/DB errors only)
+  retry_backoff_seconds: 10    # doubles each retry
+  requeue_after_minutes: 30    # a job queued/running this long is assumed lost and re-queued
 storage:
   reservation_ttl_minutes: 60
 upload:
