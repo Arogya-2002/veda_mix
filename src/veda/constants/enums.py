@@ -129,3 +129,7 @@ class AuditAction(StrEnum):
     EVENT_STATUS = "event.status"
     EVENT_NEW_LINK = "event.new_link"
     EVENT_DELETE = "event.delete"
+    PHOTOGRAPHER_SUSPEND = "photographer.suspend"
+    PHOTOGRAPHER_REACTIVATE = "photographer.reactivate"
+    QUOTA_CHANGE = "photographer.quota"
+    POOL_RESIZE = "pool.resize"

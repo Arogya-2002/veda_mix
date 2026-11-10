@@ -446,6 +446,18 @@ class PhotoDownload(Base):
     created_at: Mapped[datetime] = _created_at()
 
 
+class EventDailyStat(Base):
+    """Guest traffic per event per local day (config timezone), counted as visits happen.
+    Photos and downloads per day are counted straight from their own tables."""
+
+    __tablename__ = "event_daily_stats"
+
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), primary_key=True)
+    stat_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    unique_visitors: Mapped[int] = mapped_column(Integer, server_default="0")
+    page_views: Mapped[int] = mapped_column(Integer, server_default="0")
+
+
 # --- G. Operations ---------------------------------------------------------------------
 
 

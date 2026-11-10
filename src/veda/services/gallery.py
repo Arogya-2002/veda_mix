@@ -21,7 +21,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from veda.config.configuration import get_params
+from veda.config.configuration import get_params, local_tz
 from veda.constants.enums import (
     DownloadQuality,
     EventStatus,
@@ -32,6 +32,7 @@ from veda.constants.enums import (
 )
 from veda.db.models import (
     Event,
+    EventDailyStat,
     GalleryVisitor,
     Photo,
     PhotoDownload,
@@ -202,13 +203,35 @@ def _token_hash(token: str) -> str:
 
 
 async def record_visit(db: AsyncSession, event_id: int, visitor_token: str) -> None:
-    """One row per browser per event; repeat visits bump page_views."""
+    """One row per browser per event; repeat visits bump page_views. Also counts the day's
+    traffic: a browser is a unique visitor once per local day."""
+    token_hash = _token_hash(visitor_token)
+    previous = await db.scalar(
+        select(GalleryVisitor.last_seen_at)
+        .where(GalleryVisitor.event_id == event_id, GalleryVisitor.visitor_token_hash == token_hash)
+        .with_for_update()
+    )
     await db.execute(
         insert(GalleryVisitor)
-        .values(event_id=event_id, visitor_token_hash=_token_hash(visitor_token))
+        .values(event_id=event_id, visitor_token_hash=token_hash)
         .on_conflict_do_update(
             index_elements=["event_id", "visitor_token_hash"],
             set_={"last_seen_at": func.now(), "page_views": GalleryVisitor.page_views + 1},
+        )
+    )
+    tz = local_tz()
+    today = datetime.now(tz).date()
+    new_today = int(previous is None or previous.astimezone(tz).date() != today)
+    stat = insert(EventDailyStat).values(
+        event_id=event_id, stat_date=today, unique_visitors=new_today, page_views=1
+    )
+    await db.execute(
+        stat.on_conflict_do_update(
+            index_elements=["event_id", "stat_date"],
+            set_={
+                "unique_visitors": EventDailyStat.unique_visitors + stat.excluded.unique_visitors,
+                "page_views": EventDailyStat.page_views + 1,
+            },
         )
     )
 

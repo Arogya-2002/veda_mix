@@ -52,3 +52,21 @@ async def photo_events(event_id: int) -> AsyncIterator[dict]:
     finally:
         await pubsub.aclose()
         await client.aclose()
+
+
+@lru_cache
+def _async_client() -> aioredis.Redis:
+    return aioredis.Redis.from_url(get_settings().redis_url, socket_timeout=2)
+
+
+async def live_viewers(event_ids: list[int]) -> dict[int, int] | None:
+    """Guests with the gallery open right now, per event: every open stream is one Redis
+    subscriber, and Redis drops it when the connection closes. None if Redis is down."""
+    if not event_ids:
+        return {}
+    try:
+        counts = await _async_client().pubsub_numsub(*(channel(e) for e in event_ids))
+    except redis.RedisError:
+        log.warning("live_viewers_unavailable", exc_info=True)
+        return None
+    return {event_id: n for event_id, (_, n) in zip(event_ids, counts, strict=True)}

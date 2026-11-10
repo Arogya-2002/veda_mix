@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import field_validator
@@ -80,3 +81,8 @@ def get_image_config() -> ImageConfig:
     return ImageConfig(
         **get_params()["image"], max_pixels=get_schema()["upload"]["max_image_pixels"]
     )
+
+
+def local_tz() -> ZoneInfo:
+    """Where the business runs: dashboard days and hours are in this zone."""
+    return ZoneInfo(get_config()["timezone"])

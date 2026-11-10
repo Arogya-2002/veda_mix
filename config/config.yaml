@@ -1,4 +1,5 @@
 # Paths, storage prefixes, queue names. Secrets go in env vars, never here.
+timezone: Asia/Kolkata   # dashboard days and hours; the database stores UTC
 storage:
   originals_prefix: originals
   variants_prefix: variants
