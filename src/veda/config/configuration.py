@@ -41,6 +41,11 @@ class Settings(BaseSettings):
         return v
 
     @property
+    def secure_cookies(self) -> bool:
+        # Browsers treat http://localhost as secure, so only tests need plain cookies.
+        return self.env != "test"
+
+    @property
     def sync_database_url(self) -> str:
         # Celery workers and Alembic use the sync driver against the same DB.
         return self.database_url.replace("+asyncpg", "+psycopg")

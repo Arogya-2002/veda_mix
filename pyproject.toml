@@ -23,6 +23,7 @@ dependencies = [
 	"boto3>=1.43.126",
 	"pillow>=13.0.0",
 	"pillow-heif>=1.8.1",
+	"sse-starlette>=3.7.0",
 ]
 
 [dependency-groups]

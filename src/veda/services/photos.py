@@ -9,11 +9,30 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from veda.constants.enums import PhotoStatus, ProcessingJobStatus, ProcessingJobType
+from veda.constants.enums import (
+    PhotoStatus,
+    PhotoVariantName,
+    ProcessingJobStatus,
+    ProcessingJobType,
+)
 from veda.db.models import Photo, PhotoVariant, ProcessingJob
 from veda.entity.artifact_entity import ProcessedImage
 
 OPEN_JOB = (ProcessingJobStatus.QUEUED, ProcessingJobStatus.RUNNING)
+
+
+def live_fields(photo: Photo, variant_keys: dict[str, str]) -> dict:
+    """A READY photo as the gallery needs it: JSON-safe, S3 keys rather than URLs.
+    The same shape is published to live streams and read back for gallery pages."""
+    return {
+        "public_id": photo.public_id,
+        "width": photo.width,
+        "height": photo.height,
+        "taken_at": photo.taken_at.isoformat() if photo.taken_at else None,
+        "uploaded_at": photo.uploaded_at.isoformat(),
+        "thumb_key": variant_keys[PhotoVariantName.THUMB],
+        "web_key": variant_keys[PhotoVariantName.WEB],
+    }
 
 
 def _job(s: Session, photo_id: int) -> ProcessingJob:
@@ -48,11 +67,11 @@ def start(s: Session, photo_id: int) -> Photo | None:
     return photo
 
 
-def finish(s: Session, photo_id: int, result: ProcessedImage, keys: dict[str, str]) -> bool:
-    """Store the variants and turn the photo READY. False if another run already did."""
+def finish(s: Session, photo_id: int, result: ProcessedImage, keys: dict[str, str]) -> Photo | None:
+    """Store the variants and turn the photo READY. None if another run already did."""
     photo = _locked_photo(s, photo_id)
     if photo is None or photo.status != PhotoStatus.PROCESSING:
-        return False
+        return None
     for v in result.variants:
         s.add(
             PhotoVariant(
@@ -75,7 +94,7 @@ def finish(s: Session, photo_id: int, result: ProcessedImage, keys: dict[str, st
     job.status = ProcessingJobStatus.SUCCEEDED
     job.last_error = None
     job.finished_at = photo.ready_at
-    return True
+    return photo
 
 
 def fail(s: Session, photo_id: int, error: str) -> None:

@@ -15,6 +15,9 @@ os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://veda:veda@localhost:5432/veda_test"
 )
 os.environ["SUPABASE_URL"] = "https://test.supabase.co"
+os.environ["ENV"] = "test"  # plain (non-Secure) cookies: the test client talks http
+# Rate limits and live updates need Redis (docker compose up redis); db 15 keeps them apart.
+os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
 os.environ["RAZORPAY_KEY_ID"] = "rzp_test_key"
 os.environ["RAZORPAY_KEY_SECRET"] = "test_key_secret"
 os.environ["RAZORPAY_WEBHOOK_SECRET"] = "test_webhook_secret"

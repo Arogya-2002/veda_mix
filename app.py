@@ -3,7 +3,7 @@ import uuid
 import structlog
 from fastapi import FastAPI, Request
 
-from veda.api import auth, events, health, payments, uploads
+from veda.api import auth, events, gallery, health, payments, uploads
 from veda.exception import register_exception_handlers
 from veda.logging import setup_logging
 
@@ -16,6 +16,7 @@ app.include_router(auth.router)
 app.include_router(payments.router)
 app.include_router(events.router)
 app.include_router(uploads.router)
+app.include_router(gallery.router)
 
 
 @app.middleware("http")

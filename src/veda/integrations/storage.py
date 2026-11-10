@@ -3,6 +3,7 @@
 import base64
 import uuid
 from functools import lru_cache
+from urllib.parse import quote
 
 import boto3
 from botocore.client import BaseClient
@@ -106,3 +107,18 @@ def put(key: str, data: bytes, content_type: str) -> None:
         ContentType=content_type,
         CacheControl="private, max-age=31536000, immutable",
     )
+
+
+def presign_get(key: str, ttl_s: int, download_as: str | None = None) -> str:
+    """A short-lived link to a private object. With download_as, the browser saves it
+    under that name instead of displaying it. Local signing only, no network call."""
+    params = {"Bucket": get_settings().s3_bucket, "Key": key}
+    if download_as:
+        params["ResponseContentDisposition"] = _attachment(download_as)
+    return client().generate_presigned_url("get_object", Params=params, ExpiresIn=ttl_s)
+
+
+def _attachment(filename: str) -> str:
+    # ASCII fallback for old clients, plus the exact UTF-8 name (RFC 6266).
+    safe = (c if c.isascii() and c.isprintable() and c not in '"\\' else "_" for c in filename)
+    return f"attachment; filename=\"{''.join(safe)}\"; filename*=UTF-8''{quote(filename)}"

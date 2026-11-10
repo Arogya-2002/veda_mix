@@ -15,4 +15,9 @@ upload:
   max_attempts: 3
 gallery:
   page_size: 50
-  signed_url_ttl_minutes: 10
+  signed_url_ttl_minutes: 10     # image and download links
+  unlock_ttl_hours: 24           # how long a correct PIN keeps a browser in
+  unlock_window_minutes: 15      # wrong-PIN limits, per window:
+  unlock_failures_per_ip: 10
+  unlock_failures_per_event: 100 # caps guessing spread over many IPs
+  visitor_cookie_days: 365

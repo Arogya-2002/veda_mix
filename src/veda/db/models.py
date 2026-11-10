@@ -410,6 +410,42 @@ class ProcessingJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# --- F. Gallery analytics -------------------------------------------------------------
+
+
+class GalleryVisitor(Base):
+    """One browser per event, identified by a random cookie (stored hashed). No login, no
+    personal data: it only lets us count unique guests."""
+
+    __tablename__ = "gallery_visitors"
+    __table_args__ = (
+        UniqueConstraint("event_id", "visitor_token_hash"),
+        Index("ix_gallery_visitors_recent", "event_id", "last_seen_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    visitor_token_hash: Mapped[str] = mapped_column(String(64))  # SHA-256 of the cookie
+    first_seen_at: Mapped[datetime] = _created_at()
+    last_seen_at: Mapped[datetime] = _created_at()
+    page_views: Mapped[int] = mapped_column(Integer, server_default="1")
+
+
+class PhotoDownload(Base):
+    __tablename__ = "photo_downloads"
+    __table_args__ = (
+        CheckConstraint(_one_of("quality", DownloadQuality), name="quality"),
+        Index("ix_photo_downloads_event", "event_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    visitor_id: Mapped[int | None] = mapped_column(ForeignKey("gallery_visitors.id"))
+    quality: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = _created_at()
+
+
 # --- G. Operations ---------------------------------------------------------------------
 
 

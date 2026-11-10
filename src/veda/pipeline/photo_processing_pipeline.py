@@ -10,7 +10,7 @@ from veda.config.configuration import get_image_config
 from veda.constants.enums import PhotoStatus
 from veda.db import sync_session
 from veda.entity.config_entity import ImageConfig
-from veda.integrations import storage
+from veda.integrations import realtime, storage
 from veda.logging import get_logger
 from veda.services import photos
 
@@ -46,5 +46,9 @@ class PhotoProcessingPipeline:
             storage.put(keys[v.name], v.data, v.content_type)
 
         with sync_session() as s, s.begin():
-            done = photos.finish(s, photo_id, result, keys)
-        return PhotoStatus.READY if done else "SKIPPED"
+            ready = photos.finish(s, photo_id, result, keys)
+            fields = photos.live_fields(ready, keys) if ready else None
+        if fields is None:
+            return "SKIPPED"
+        realtime.publish_photo_ready(photo.event_id, fields)  # after commit: guests can load it
+        return PhotoStatus.READY
